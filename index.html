@@ -443,3 +443,117 @@
                     <img
                       src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/65003470-9993-46cf-9cdb-f092b2340df5.png"
                       alt="Merchant logo for receipt with blue
+
+                      <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const cartItems = [];
+    const cartCount = document.getElementById("cartCount");
+    const cartTotal = document.getElementById("cartTotal");
+    const itemCount = document.getElementById("itemCount");
+    const subtotalAmount = document.getElementById("subtotalAmount");
+    const taxAmount = document.getElementById("taxAmount");
+    const totalAmount = document.getElementById("totalAmount");
+    const currentCartItems = document.getElementById("currentCartItems");
+    const processPaymentBtn = document.getElementById("processPaymentBtn");
+    const processingView = document.getElementById("processingView");
+    const successView = document.getElementById("successView");
+    const successAmount = document.getElementById("successAmount");
+    const successTransactionId = document.getElementById("successTransactionId");
+    const successTime = document.getElementById("successTime");
+    const paymentMethod = document.getElementById("paymentMethod");
+    const dwollaFields = document.getElementById("dwollaFields");
+    const achFields = document.getElementById("achFields");
+
+    // Example products (you can replace this with your actual product data)
+    const products = [
+      { id: 1, name: "Product 1", price: 10.0 },
+      { id: 2, name: "Product 2", price: 20.0 },
+    ];
+
+    // Function to update cart display
+    function updateCartDisplay() {
+      cartCount.textContent = cartItems.length;
+      cartTotal.textContent = `$${cartItems.reduce((total, item) => total + item.price, 0).toFixed(2)}`;
+      itemCount.textContent = cartItems.length;
+      subtotalAmount.textContent = `$${cartItems.reduce((total, item) => total + item.price, 0).toFixed(2)}`;
+      taxAmount.textContent = `$${(cartItems.reduce((total, item) => total + item.price, 0) * 0.1).toFixed(2)}`;
+      totalAmount.textContent = `$${(cartItems.reduce((total, item) => total + item.price, 0) * 1.1).toFixed(2)}`;
+      currentCartItems.innerHTML = cartItems.map(item => `<div>${item.name} - $${item.price.toFixed(2)}</div>`).join('');
+    }
+
+    // Add products to cart (for demonstration)
+    products.forEach(product => {
+      const button = document.createElement("button");
+      button.textContent = `Add ${product.name}`;
+      button.onclick = () => {
+        cartItems.push(product);
+        updateCartDisplay();
+      };
+      document.body.appendChild(button);
+    });
+
+    // Handle payment processing
+    processPaymentBtn.addEventListener("click", async () => {
+      const accountName = document.getElementById("accountName").value;
+      const accountNumber = document.getElementById("accountNumber").value;
+      const routingNumber = document.getElementById("routingNumber").value;
+
+      // Basic validation
+      if (!accountName || !accountNumber || !routingNumber) {
+        alert("Please fill in all required fields.");
+        return;
+      }
+
+      // Show processing view
+      processingView.classList.remove("hidden");
+      successView.classList.add("hidden");
+
+      // Prepare payment data
+      const paymentData = {
+        accountName,
+        accountNumber,
+        routingNumber,
+        amount: totalAmount.textContent.replace('$', ''),
+      };
+
+      try {
+        // Make API call to your backend to process payment
+        const response = await fetch('/api/dwolla-transfer', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(paymentData),
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          // Update success view
+          successAmount.textContent = `$${result.amount}`;
+          successTransactionId.textContent = result.transactionId; // Assuming your API returns a transaction ID
+          successTime.textContent = new Date().toLocaleTimeString();
+          successView.classList.remove("hidden");
+          processingView.classList.add("hidden");
+        } else {
+          alert("Payment failed: " + result.error);
+          processingView.classList.add("hidden");
+        }
+      } catch (error) {
+        alert("An error occurred: " + error.message);
+        processingView.classList.add("hidden");
+      }
+    });
+
+    // Toggle payment method fields
+    paymentMethod.addEventListener("change", function () {
+      if (this.value === "dwolla") {
+        dwollaFields.style.display = "block";
+        achFields.style.display = "none";
+      } else {
+        dwollaFields.style.display = "none";
+        achFields.style.display = "block";
+      }
+    });
+  });
+</script>
